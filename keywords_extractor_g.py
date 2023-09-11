@@ -8,6 +8,8 @@
 """
 from cProfile import label
 from gensim.models.keyedvectors import KeyedVectors
+from gensim.scripts.glove2word2vec import glove2word2vec
+from gensim.test.utils import datapath, get_tmpfile
 import math
 import numpy as np
 import jieba
@@ -39,7 +41,7 @@ def get_idf(t, ds):
     return math.log(n / (1 + df))
 
 
-def get_wllr(in_class_freq, out_class_freq):
+def get_poccr(in_class_freq, out_class_freq, all_class_freq):
     """
     WLLR: weighted log likelihood ratio
     r(w,y) = p(w|y)*log(p(w|y)/p(w|y^))
@@ -47,8 +49,9 @@ def get_wllr(in_class_freq, out_class_freq):
     The same word in a class will always has same WLLR value,
     no matter in which sample.
     """
-    wllr = in_class_freq * math.log10(in_class_freq / out_class_freq)
-    return wllr
+
+    poccr = math.log(in_class_freq / (out_class_freq * all_class_freq))
+    return poccr
 
 def get_median(scores):
     scores = sorted(scores, reverse=True)
@@ -99,8 +102,9 @@ class KeywordsExtractor:
             print('Loading word vectors......')
             # 这里使用的是GoogleNews词向量，个人感觉比Glove词向量好
             # tips: If use Glove, set no_header=True, since Glove file misses a header
-            self.w2v_model = KeyedVectors.load_word2vec_format("weights/GoogleNews-vectors-negative300.bin",
-                                                                binary=True, unicode_errors='ignore')
+
+            self.w2v_model = KeyedVectors.load_word2vec_format("weights/glove.300d.txt",
+                                                                no_header=True, binary=False, unicode_errors='ignore')
 
             f = open('stopwords/en_stopwords.txt', encoding='utf8')
             for stop_word in f.readlines():
@@ -254,9 +258,13 @@ class KeywordsExtractor:
                     continue
                 in_count = global_doc_count[label][w]
                 out_count = max(sum([global_doc_count[l].get(w,0) for l in set(labels) if l != label]), 1e-5)
-                in_class_freq = in_count / num_in_class_docs
-                out_class_freq = out_count / num_out_class_docs
-                global_wllr_dict[label][w] = get_wllr(in_class_freq, out_class_freq)
+                #in_class_freq = in_count / num_in_class_docs
+                in_class_freq = in_count / len(labels)
+                #out_class_freq = out_count / num_out_class_docs
+                out_class_freq = out_count / len(labels)
+                all_class_freq = num_in_class_docs / len(labels)
+                #global_wllr_dict[label][w] = get_wllr(in_class_freq, out_class_freq)
+                global_wllr_dict[label][w] = get_poccr(in_class_freq, out_class_freq, all_class_freq)
             # 排个序
             sorted_wllr_dict[label] = [(pair[0], pair[1]) for pair in sorted(global_wllr_dict[label].items(),
                                                                              key=lambda kv: kv[1], reverse=True)]
@@ -313,7 +321,7 @@ class KeywordsExtractor:
             with open(global_roles_save_path, 'rb') as f:
                 global_roles_dict = pickle.load(f)
         else:
-            global_roles_dict = global_role_kws_extraction(global_lr_dict, global_ls_dict, list(set(labels)))
+            global_roles_dict = global_role_kws_extraction(global_lr_dict, global_ls_dict,list(set(labels)))
             print('First level keys: ',list(global_roles_dict.keys()))
             print('Second level keys: ',list(global_roles_dict[list(global_roles_dict.keys())[0]].keys()))
             with open(f'{output_dir}/global_kws_dict_{name}.pkl','wb') as f:
@@ -326,7 +334,7 @@ class KeywordsExtractor:
 
 # -------------------------------------------------------------------------------------------
 
-def role_kws_extraction_single(words, label, global_ls_dict, global_lr_dict, bar='Q2',skip_words=[]):
+def role_kws_extraction_single(words, label, global_ls_dict, global_lr_dict, bar='Q2',stop_words=[]):
     """
     通过分位数这种大家好接受的标准来划分集合，然后归一化，然后排序。目前来看效果不错。
     根据得分的分位数进行划分高低的标准，可选择Q1，Q2，Q3三种分位数。
@@ -341,7 +349,7 @@ def role_kws_extraction_single(words, label, global_ls_dict, global_lr_dict, bar
     ls_dict = {}
     for w in set(words):
         # filter punctuations and stop words
-        if w in skip_words:
+        if w in stop_words:
             continue
         ls_dict[w] = global_ls_dict[label][w]
         lr_dict[w] = global_lr_dict[label][w]

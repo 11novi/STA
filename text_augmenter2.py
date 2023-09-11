@@ -5,6 +5,7 @@ from random import shuffle
 import pickle
 from logging import Logger
 from nltk.corpus import wordnet
+from pywsd import adapted_lesk
 logger = Logger('text augmenter')
 random.seed(1)
 
@@ -41,36 +42,50 @@ class TextAugmenter:
         if self.lang == 'en':
             return nltk.tokenize.word_tokenize(text)
 
-    def get_similar_words(self, word):
+
+    def get_similar_words(self, words):
         """
         使用预选保存好的相似词典直接查询
         若词典中没有该词，则分情况讨论：
         1. 对于中文，则查询该词的最后一个字，因为考虑到中文词中多数情况后面的字更能代表该词
         2. 对于英文，则直接返回[]
         """
+        #words = self.tokenizer(text)
         if self.using_wordnet:  # 使用wordnet查近义词
             print('Oh Wordnet!')
             assert self.lang == 'en', "wordnet only support 'en'"
-            word = word.lower()
-            similars = set()
-            for w in wordnet.synsets(word):
-                for l in w.lemmas():
-                    sim = l.name().replace("_", " ").replace("-", " ").lower()
-                    sim = "".join([char for char in sim if char in ' qwertyuiopasdfghjklzxcvbnm'])
-                    similars.add(sim)
-            if word in similars:
-                similars.remove(word)
-            return list(similars)
+            #word = word.lower()
+            pos_tags = nltk.pos_tag(words)
+            for word, func in pos_tags:
+                if word == word and not self.get_wordnet_pos(func):
+                    return []
+                elif word == word:
+                    with_asp = [x if x != '$t$' else word for x in words]
+                    meaning = adapted_lesk(' '.join(with_asp), word, pos=self.get_wordnet_pos(func))
+            synonyms = []
+            if meaning:
+                for syn in meaning.lemma_names():
+                    synonym = syn.lower()
+                    synonyms.append(synonym)
+                if word in synonyms:
+                    synonyms.remove(word)
+            return synonyms
 
-        if word not in self.vocab:
-            if self.lang == 'zh':
-                return self.similar_words_dict.get(word[-1], [])  # todo: 这么做是否好还有待验证
-            else:
-                return []
         else:
             return self.similar_words_dict.get(word)
 
 
+    def get_wordnet_pos(self, treebank_tag):
+        if treebank_tag.startswith('J'):
+            return wordnet.ADJ
+        elif treebank_tag.startswith('V'):
+            return wordnet.VERB
+        elif treebank_tag.startswith('N'):
+            return wordnet.NOUN
+        elif treebank_tag.startswith('R'):
+            return wordnet.ADV
+        else:
+            return ''
 
     ########################################################################
     # 同义词替换
@@ -102,7 +117,7 @@ class TextAugmenter:
         num_replaced = 0
         replacement_res = []  # 记录替换的情况
         for word in replacement_word_list:
-            similars = self.get_similar_words(word)
+            similars = self.get_similar_words(words)
             if len(similars) >= 1:
                 similar = random.choice(similars)
                 new_words = [similar if w == word else w for w in new_words]

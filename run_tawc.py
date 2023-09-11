@@ -6,20 +6,20 @@ from tqdm import tqdm
 import os
 import pickle
 from text_augmenter import TextAugmenter
-from keywords_extractor import role_kws_extraction_single
+from keywords_extractor_w import role_kws_extraction_single
 
 parser = argparse.ArgumentParser(allow_abbrev=False)
 # 常用参数：
-parser.add_argument('--dataset', type=str, default='resto2016', help='dataset dir name, in data/')
+parser.add_argument('--dataset', type=str, default='negative2015', help='dataset dir name, in data/')
 parser.add_argument('--lang', type=str, default='en', help='language, en or zh')
-parser.add_argument('--strategy', type=str, default='local', help='local or global')
+parser.add_argument('--strategy', type=str, default='global', help='local or global')
 parser.add_argument('--methods', type=str, default='re', help='methods of augmentation, join by ","')
-parser.add_argument('--p', type=float, default=0.1, help='prob of the augmentation')
-parser.add_argument('--bar', type=str, default='Q2', help='the bar of extracting role keywords, Q1, Q2, Q3 for three quartiles')
-parser.add_argument('--n_aug', type=int, default=1, help='how many times to augment')
+parser.add_argument('--p', type=float, default=0.2, help='prob of the augmentation')
+parser.add_argument('--bar', type=str, default='Q1', help='the bar of extracting role keywords, Q1, Q2, Q3 for three quartiles')
+parser.add_argument('--n_aug', type=int, default=6, help='how many times to augment')
 parser.add_argument('--best_practice', default=False, action='store_true')
 
-parser.add_argument('--ablation_without',type=str, default=None, help='lr or ls')
+parser.add_argument('--ablation_without',type=str, default='ls', help='lr or ls')
 
 
 args = parser.parse_args()
@@ -61,9 +61,9 @@ TA = TextAugmenter(args.lang)
 puncs = ',.，。!?！？;；、'
 punc_list = [w for w in puncs]
 special_tokens = ",./;\`~<>?:\"，。/；‘’“”、｜《》？～· \n[]{}【】「」（）()0123456789０１２３４５６７８９" \
-            "，．''／；\｀～＜＞？：＂,。／;‘’“”、|《》?~·　\ｎ［］｛｝【】「」("")（） "
+            "，．''／；\｀～＜＞？：＂,。／;‘’“”、|《》?~·　\ｎ［］｛｝【】「」("")（） '$t$'"
 stop_words = TA.stop_words
-skip_words = [t for t in special_tokens] + stop_words
+skip_words = [t for t in special_tokens]
 
 # 合并数据集，先把原始样本加入
 mix_contents = []
@@ -80,7 +80,7 @@ for method in methods:
             words = TA.tokenizer(text)
             # 使用局部关键词，即从当前文本中
             if args.strategy == 'local':
-                kws = role_kws_extraction_single(words, label, global_ls_dict, global_lr_dict, bar=args.bar, skip_words=skip_words)
+                kws = role_kws_extraction_single(words, label, global_ls_dict, global_lr_dict, bar=args.bar, stop_words=stop_words)
             # 使用全局关键词
             elif args.strategy == 'global':
                 kws = global_kws_dict[label]
@@ -107,13 +107,14 @@ for method in methods:
 
             if method == 'de':
                 new_words = TA.aug_by_deletion(text, args.p, 'selective', print_info=print_info,
-                                               selected_words=kws['scw']+kws['fcw']+kws['iw'])  # except ccw
+                                               selected_words=kws['fcw']+kws['iw'])  # except ccw
             elif method == 're':
                 new_words = TA.aug_by_replacement(text, args.p, 'selective', print_info=print_info,
                                                   selected_words=kws['scw']+kws['fcw']+kws['iw'])  # except ccw
+                                                  #selected_words=kws['ccw'])
             elif method == 'in':
                 new_words = TA.aug_by_insertion(text, args.p, 'selective', print_info=print_info,
-                                                given_words=kws['ccw']+kws['scw']+kws['iw'])  # except fcw
+                                                selected_words=kws['ccw']+kws['scw'])  # except fcw
             elif method == 'sw':
                 new_words = TA.aug_by_swap(text, args.p, 'selective', print_info=print_info,
                                            selected_words=kws['iw'])  # iw better

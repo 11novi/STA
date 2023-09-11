@@ -7,28 +7,28 @@ from tqdm import tqdm
 import torch
 from torch.optim import AdamW
 import torch.nn.functional as F
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, BertForSequenceClassification, RobertaForSequenceClassification
 from transformers import DataCollatorWithPadding
 from my_dataset import MyDataloaders
-from utils import OrderNamespace, fix_seed
+from data.new2016.utils import OrderNamespace, fix_seed
 parser = argparse.ArgumentParser(allow_abbrev=False)
 
 # 常用参数：
-parser.add_argument('--dataset', type=str, default='bbc_500', help='dataset dir name, in data/')
+parser.add_argument('--dataset', type=str, default='new2016', help='dataset dir name, in data/')
 parser.add_argument('--lang', type=str, default='en', help='en or zh')
-parser.add_argument('--train_file', type=str, default='train', help='train filename, name before .csv')
-parser.add_argument('--test_file', type=str, default='test', help='test filename, name before .csv')
+parser.add_argument('--train_file', type=str, default='t15_lr', help='train filename, name before .csv')
+parser.add_argument('--test_file', type=str, default='test2015', help='test filename, name before .csv')
 parser.add_argument('--more_test_files', type=str, default=None, help='test filename, name before .csv, join by ","')
 # 其他：
 parser.add_argument('--maxlen', type=int, default=512, help='max length of the sequence')
 parser.add_argument('--bsz', type=int, default=64, help='batch size')
 parser.add_argument('--metric', type=str, default='accuracy', help='metric for early-stopping, "loss" or "accuracy", usually "loss" will train longer')
-parser.add_argument('--num_iter', type=int, default=1, help='number of iterations of experiments')
-parser.add_argument('--patience', type=int, default=10, help='patience of early-stopping')
+parser.add_argument('--num_iter', type=int, default=3, help='number of iterations of experiments')
+#parser.add_argument('--patience', type=int, default=20, help='patience of early-stopping')
 parser.add_argument('--comment', type=str, default='', help='extra comment, will be added to the log')
 parser.add_argument('--group_head', action='store_true', help='if used, is the first experiment of the group of exps')
 # 不重要：
-parser.add_argument('--epochs', type=int, default=100, help='max number of epochs')
+parser.add_argument('--epochs', type=int, default=50, help='max number of epochs')
 parser.add_argument('--split_valid_from', type=int, default=None, help='split_valid_from')
 
 
@@ -47,8 +47,9 @@ with open('log/%s.txt'%args.dataset, 'a') as f:
 
 # 设置默认的预训练模型：
 if args.lang == 'en':
-    # checkpoint = 'bert_model/TinyBERT_General_4L_312D'
-    checkpoint = 'distilbert-base-uncased'
+    #checkpoint = "textattack/bert-base-uncased-yelp-polarity"
+    #checkpoint = 'distilbert-base-uncased'
+    checkpoint = "cardiffnlp/twitter-roberta-base-emotion"
 elif args.lang == 'zh':
     checkpoint = 'bert_model/TinyBERT_4L_zh'
 else:
@@ -87,7 +88,9 @@ if args.more_test_files:
 #                            功能函数、损失函数准备
 ########################################################################
 def init_model():
-    model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=num_labels)
+    #model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=num_labels)
+    #model = BertForSequenceClassification.from_pretrained(checkpoint, num_labels=num_labels, ignore_mismatched_sizes=True)
+    model = RobertaForSequenceClassification.from_pretrained(checkpoint, num_labels=num_labels,  ignore_mismatched_sizes=True)
     return model
 
 num_training_steps = args.epochs * len(my_dataloaders.train_dataloader)  # 注意dataloader是一个batch一个batch输出的
@@ -175,9 +178,9 @@ for i in range(args.num_iter):
         else:
             wait += 1
             print('current wait:', wait)
-            if wait >= args.patience:
-                print('early-stop at epoch %s' % epoch)
-                break
+            #if wait >= args.patience:
+             #   print('early-stop at epoch %s' % epoch)
+             #   break
     val_acc_list.append(best_val_acc)
 
     # load the best model and evaluate it

@@ -39,7 +39,7 @@ def get_idf(t, ds):
     return math.log(n / (1 + df))
 
 
-def get_wllr(in_class_freq, out_class_freq):
+def get_poccr(in_class_freq, out_class_freq, all_class_freq):
     """
     WLLR: weighted log likelihood ratio
     r(w,y) = p(w|y)*log(p(w|y)/p(w|y^))
@@ -47,8 +47,9 @@ def get_wllr(in_class_freq, out_class_freq):
     The same word in a class will always has same WLLR value,
     no matter in which sample.
     """
-    wllr = in_class_freq * math.log10(in_class_freq / out_class_freq)
-    return wllr
+
+    poccr = math.log(in_class_freq / (out_class_freq * all_class_freq))
+    return poccr
 
 def get_median(scores):
     scores = sorted(scores, reverse=True)
@@ -254,9 +255,13 @@ class KeywordsExtractor:
                     continue
                 in_count = global_doc_count[label][w]
                 out_count = max(sum([global_doc_count[l].get(w,0) for l in set(labels) if l != label]), 1e-5)
-                in_class_freq = in_count / num_in_class_docs
-                out_class_freq = out_count / num_out_class_docs
-                global_wllr_dict[label][w] = get_wllr(in_class_freq, out_class_freq)
+                #in_class_freq = in_count / num_in_class_docs
+                in_class_freq = in_count / len(labels)
+                #out_class_freq = out_count / num_out_class_docs
+                out_class_freq = out_count / len(labels)
+                all_class_freq = num_in_class_docs / len(labels)
+                #global_wllr_dict[label][w] = get_wllr(in_class_freq, out_class_freq)
+                global_wllr_dict[label][w] = get_poccr(in_class_freq, out_class_freq, all_class_freq)
             # 排个序
             sorted_wllr_dict[label] = [(pair[0], pair[1]) for pair in sorted(global_wllr_dict[label].items(),
                                                                              key=lambda kv: kv[1], reverse=True)]
